@@ -3,6 +3,7 @@
 A reusable, resumable upload server: static Hugging Face Space frontend + Modal FastAPI/tus
 backend that publishes directly to a Hugging Face dataset. Chunks are staged temporarily on a
 Modal Volume and deleted immediately after the Hub commit, so no audio is retained on the server.
+The frontend follows the LEIN/AfriSpeech visual style: tricolor stripe, LEIN navbar, and clean card layout.
 
 Live example (LEIN Speech):
 
