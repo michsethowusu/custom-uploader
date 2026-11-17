@@ -21,8 +21,6 @@
       width: 100%; padding: 10px 11px; border: 1px solid #c6d1de; border-radius: 8px; font: inherit; background: #fff;
     }
     textarea { min-height: 72px; resize: vertical; }
-    .checkbox { display: flex; gap: 10px; align-items: flex-start; grid-column: 1/-1; font-weight: 500; }
-    .checkbox input { margin-top: 4px; width: 17px; height: 17px; }
     .hint { color: var(--muted); font-size: 12.5px; font-weight: 400; }
     button { font: inherit; cursor: pointer; }
     .btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font-weight: 650; }
@@ -44,8 +42,8 @@
   <header>
     <h1>LEIN Speech Dataset — Station Audio Upload</h1>
     <p>
-      Share recordings of Liberian English / Kolokwa speech. Files are sent in small resumable
-      chunks and published directly to the public
+      Share recordings of Liberian English / Kolokwa speech. Files or entire folders are sent in
+      small resumable chunks and published directly to the public
       <a id="dataset-link" href="#" target="_blank" rel="noopener">Hugging Face dataset</a>.
       You can pause, lose connection, or close this tab — uploads pick up where they stopped.
     </p>
@@ -55,12 +53,10 @@
     <section class="card">
       <h2>Recording details</h2>
       <div class="grid">
-        <div><label for="station">Station name *</label><input id="station" type="text" maxlength="120" /></div>
-        <div><label for="county">County *</label><input id="county" type="text" maxlength="120" /></div>
-        <div><label for="contributor">Contributor / presenter</label><input id="contributor" type="text" maxlength="120" /></div>
-        <div><label for="email">Contact email <span class="hint">(optional)</span></label><input id="email" type="email" maxlength="120" /></div>
+        <div><label for="station">Station name *</label><input id="station" type="text" maxlength="120" required /></div>
+        <div><label for="email">Email *</label><input id="email" type="email" maxlength="120" required /></div>
         <div>
-          <label for="language">Language / variety</label>
+          <label for="language">Language *</label>
           <select id="language">
             <option>Kolokwa (Liberian English)</option>
             <option>Liberian English</option>
@@ -68,20 +64,19 @@
             <option>Other</option>
           </select>
         </div>
-        <div><label for="recording_date">Recording date</label><input id="recording_date" type="date" /></div>
-        <div style="grid-column:1/-1"><label for="notes">Notes <span class="hint">(programme name, speaker count, permissions, etc.)</span></label><textarea id="notes" maxlength="1000"></textarea></div>
-        <label class="checkbox" for="consent">
-          <input id="consent" type="checkbox" />
-          <span>I confirm the station owns or has permission to share these recordings publicly under CC BY 4.0, and that speakers were informed. *</span>
-        </label>
       </div>
+      <p class="hint">By uploading, you confirm you have permission to share these files publicly under CC BY 4.0.</p>
       <div id="form-error" class="error"></div>
     </section>
 
     <section class="card">
-      <h2>Select audio files</h2>
+      <h2>Select audio files or folders</h2>
       <div id="uppy-dashboard"></div>
-      <p class="hint">Accepted: WAV, FLAC, MP3, M4A, AAC, OGG, Opus, WebM, ZIP, CSV, JSON, TXT. Up to 5 GB per file.</p>
+      <p class="hint">
+        Drop files or a whole folder, or use <strong>browse folders</strong> for a large folder with
+        subfolders — the folder structure is preserved in the dataset. Accepted: WAV, FLAC, MP3,
+        M4A, AAC, OGG, Opus, WebM, ZIP, CSV, JSON, TXT. Up to 5 GB per file.
+      </p>
     </section>
 
     <section class="card">
@@ -109,17 +104,12 @@
   $("#dataset-link").href = cfg.datasetUrl;
   $("#dataset-link").textContent = cfg.datasetName;
 
-  const fields = ["station", "county", "contributor", "email", "language", "recording_date", "notes", "consent"];
+  const fields = ["station", "email", "language"];
   function currentMeta() {
     return {
       station: $("#station").value.trim(),
-      county: $("#county").value.trim(),
-      contributor: $("#contributor").value.trim(),
       email: $("#email").value.trim(),
       language: $("#language").value,
-      recording_date: $("#recording_date").value,
-      notes: $("#notes").value.trim(),
-      consent: $("#consent").checked ? "true" : "false",
     };
   }
 
@@ -132,8 +122,8 @@
   function validateForm() {
     const meta = currentMeta();
     if (!meta.station) { $("#form-error").textContent = "Station name is required."; return false; }
-    if (!meta.county) { $("#form-error").textContent = "County is required."; return false; }
-    if (meta.consent !== "true") { $("#form-error").textContent = "Please confirm sharing permission."; return false; }
+    if (!meta.email) { $("#form-error").textContent = "Email is required."; return false; }
+    if (!/^\S+@\S+\.\S+$/.test(meta.email)) { $("#form-error").textContent = "Enter a valid email address."; return false; }
     $("#form-error").textContent = "";
     return true;
   }
@@ -227,6 +217,7 @@
       onBeforeFileAdded: (file) => {
         file.meta.filename = file.name;
         file.meta.filetype = file.type || "";
+        file.meta.relativePath = file.meta.relativePath || file.data?.webkitRelativePath || file.name;
         return file;
       },
       onBeforeUpload: () => validateForm(),
@@ -236,7 +227,8 @@
         target: "#uppy-dashboard",
         proudlyDisplayPoweredByUppy: false,
         showProgressDetails: true,
-        note: "Choose one or more files. Progress resumes automatically after a disconnect.",
+        fileManagerSelectionType: "both",
+        note: "Drop files or a folder, or browse folders. Progress resumes after a disconnect.",
         metaFields: [],
       })
       .use(Tus, {
@@ -244,6 +236,7 @@
         chunkSize: cfg.chunkSize,
         retryDelays: [0, 2000, 5000, 10000, 20000, 60000],
         removeFingerprintOnSuccess: true,
+        allowedMetaFields: ["station", "email", "language", "filename", "filetype", "relativePath"],
       })
       .use(GoldenRetriever, { expires: 7 * 24 * 60 * 60 * 1000 });
 

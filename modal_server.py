@@ -61,6 +61,21 @@ def _safe_filename(value: str) -> str:
     return value.strip(". ")[:180] or "upload.bin"
 
 
+def _safe_relative_path(value: str | None, fallback: str) -> str:
+    raw = (value or fallback).replace("\\", "/")
+    parts = []
+    for part in raw.split("/"):
+        part = part.strip()
+        if not part or part in {".", ".."}:
+            continue
+        clean = _safe_filename(part)
+        if clean and clean not in {".", ".."}:
+            parts.append(clean)
+    if not parts:
+        parts = [_safe_filename(fallback)]
+    return "/".join(parts[:20])[:600]
+
+
 def _parse_upload_metadata(header: str | None) -> dict[str, str]:
     result: dict[str, str] = {}
     if not header:
@@ -79,7 +94,10 @@ def _parse_upload_metadata(header: str | None) -> dict[str, str]:
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    with tmp.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(tmp, path)
 
 
@@ -156,8 +174,19 @@ def finalize_upload(upload_id: str) -> dict[str, Any]:
         stem = Path(safe_name).stem
         prefix = checksum[:12]
 
-        audio_path = f"uploads/{station_slug}/{month}/{prefix}-{safe_name}"
-        metadata_path = f"metadata/{station_slug}/{month}/{prefix}-{stem}.json"
+        relative_path = meta.get("relative_path") or safe_name
+        parts = [part for part in relative_path.split("/") if part]
+        folder_prefix = "/".join(parts[:-1])
+        audio_base = f"uploads/{station_slug}/{month}"
+        metadata_base = f"metadata/{station_slug}/{month}"
+        audio_path = (
+            f"{audio_base}/{folder_prefix}/{prefix}-{safe_name}"
+            if folder_prefix else f"{audio_base}/{prefix}-{safe_name}"
+        )
+        metadata_path = (
+            f"{metadata_base}/{folder_prefix}/{prefix}-{stem}.json"
+            if folder_prefix else f"{metadata_base}/{prefix}-{stem}.json"
+        )
 
         api = HfApi(token=os.environ["HF_TOKEN"])
         if not api.file_exists(
@@ -175,14 +204,11 @@ def finalize_upload(upload_id: str) -> dict[str, Any]:
         record = {
             "upload_id": upload_id,
             "station": meta["station"],
-            "county": meta.get("county", ""),
-            "contributor": meta.get("contributor", ""),
             "email": meta.get("email", ""),
             "language": meta.get("language", ""),
-            "recording_date": meta.get("recording_date", ""),
-            "notes": meta.get("notes", ""),
-            "consent": True,
             "original_filename": meta["original_filename"],
+            "original_relative_path": meta.get("original_relative_path", ""),
+            "relative_path": relative_path,
             "content_type": meta.get("content_type", ""),
             "size_bytes": int(meta["length"]),
             "sha256": checksum,
@@ -310,30 +336,28 @@ def web_app():
             return JSONResponse({"error": "Station and filename metadata are required"}, status_code=400)
         if len(station) > 120 or len(filename) > 255:
             return JSONResponse({"error": "Station or filename is too long"}, status_code=400)
-        if (meta.get("consent") or "").lower() not in {"true", "1", "yes"}:
-            return JSONResponse({"error": "Recording consent must be confirmed"}, status_code=400)
 
         safe_name = _safe_filename(filename)
         extension = Path(safe_name).suffix.lower()
         if extension not in ALLOWED_EXTENSIONS:
             return JSONResponse({"error": f"Unsupported file type: {extension}"}, status_code=400)
 
+        original_relative = (meta.get("relativepath") or meta.get("relative_path") or filename).strip()
+        relative_path = _safe_relative_path(original_relative, filename)
+
         upload_id = str(uuid.uuid4())
         record = {
             "upload_id": upload_id,
             "length": length,
             "original_filename": filename[:255],
+            "original_relative_path": original_relative[:MAX_META_VALUE],
             "safe_filename": safe_name,
+            "relative_path": relative_path,
             "content_type": (meta.get("filetype") or meta.get("type") or "application/octet-stream")[:100],
             "station": station[:120],
             "station_slug": _slug(station),
-            "county": (meta.get("county") or "")[:120],
-            "contributor": (meta.get("contributor") or "")[:120],
             "email": (meta.get("email") or "")[:120],
             "language": (meta.get("language") or "Kolokwa (Liberian English)")[:120],
-            "recording_date": (meta.get("recording_date") or "")[:40],
-            "notes": (meta.get("notes") or "")[:MAX_META_VALUE],
-            "consent": True,
             "created_at": _utc_now(),
         }
         _reload_volume()
@@ -447,8 +471,12 @@ def web_app():
         offset = data_path.stat().st_size if data_path.exists() else 0
         done_path = folder / "done.json"
         if done_path.exists():
-            payload = _read_json(done_path)
-            offset = int(meta["length"])
+            try:
+                payload = _read_json(done_path)
+                offset = int(meta["length"])
+            except Exception:
+                payload = {"status": "processing"}
+                offset = int(meta["length"])
         elif offset >= int(meta["length"]):
             payload = {"status": "processing"}
         else:
@@ -464,7 +492,11 @@ def web_app():
             return JSONResponse({"error": "Invalid upload id"}, status_code=400)
         _reload_volume()
         done_path = folder / "done.json"
-        if not done_path.exists() or _read_json(done_path).get("status") != "failed":
+        try:
+            state = _read_json(done_path) if done_path.exists() else {}
+        except Exception:
+            state = {}
+        if state.get("status") != "failed":
             return JSONResponse({"error": "Only failed uploads can be retried"}, status_code=400)
         done_path.unlink()
         _commit_volume()

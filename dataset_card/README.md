@@ -24,19 +24,20 @@ Raw audio recordings submitted by partner radio stations for the LEIN Speech Dat
 This is the landing bucket for the public upload portal at
 [spaces/michsethowusu/lein-speech-upload](https://huggingface.co/spaces/michsethowusu/lein-speech-upload).
 
-Files are published as soon as a station's resumable upload completes. Each audio file has a
-matching JSON record under `metadata/` with the station, county, contributor, recording date,
-notes, file size and SHA-256 checksum.
+Files are published as soon as a station's resumable upload completes. Stations provide only their
+name, email and language; whole folders (including subfolders) can be uploaded and their structure
+is preserved. Each audio file has a matching JSON record under `metadata/` with the station, email,
+language, original relative path, file size and SHA-256 checksum.
 
 ## Repository layout
 
-- `uploads/<station>/<yyyy-mm>/<sha256-prefix>-<filename>` — submitted audio, ZIP batches and sidecars
-- `metadata/<station>/<yyyy-mm>/<sha256-prefix>-<name>.json` — provenance record for each file
+- `uploads/<station>/<yyyy-mm>/<relative-folders>/<sha256-prefix>-<filename>` — submitted audio, ZIP batches and sidecars
+- `metadata/<station>/<yyyy-mm>/<relative-folders>/<sha256-prefix>-<name>.json` — provenance record for each file
 
 ## License
 
-Submitted recordings are shared under CC BY 4.0. Contributors confirm they have permission to
-share the recordings publicly before uploading.
+Submitted recordings are shared under CC BY 4.0. By uploading, stations confirm they have
+permission to share the recordings publicly.
 
 ## Notes
 
