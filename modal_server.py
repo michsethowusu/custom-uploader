@@ -203,6 +203,7 @@ def finalize_upload(upload_id: str) -> dict[str, Any]:
 
         record = {
             "upload_id": upload_id,
+            "submission_id": meta.get("submission_id", ""),
             "station": meta["station"],
             "email": meta.get("email", ""),
             "language": meta.get("language", ""),
@@ -243,6 +244,35 @@ def finalize_upload(upload_id: str) -> dict[str, Any]:
         })
         _commit_volume()
         raise
+
+
+@app.function(
+    image=image,
+    secrets=[hub_secret, config_secret],
+    timeout=5 * 60,
+    retries=2,
+)
+def record_submission(payload: dict[str, Any]) -> str:
+    """Persist the station form details once per upload session."""
+    from huggingface_hub import HfApi
+
+    api = HfApi(token=os.environ["HF_TOKEN"])
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    path = f"submissions/{payload['station_slug']}/{month}/{payload['submission_id']}.json"
+    document = {
+        "submission_id": payload["submission_id"],
+        "station": payload["station"],
+        "email": payload["email"],
+        "language": payload["language"],
+        "recorded_at": _utc_now(),
+    }
+    _upload_to_hub(
+        api,
+        json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8"),
+        path,
+        f"Record submission from {payload['station']}",
+    )
+    return path
 
 
 @app.function(
@@ -346,8 +376,15 @@ def web_app():
         relative_path = _safe_relative_path(original_relative, filename)
 
         upload_id = str(uuid.uuid4())
+        candidate_submission = (meta.get("submissionid") or meta.get("submission_id") or "").strip()
+        submission_id = (
+            candidate_submission
+            if re.fullmatch(r"[A-Za-z0-9_-]{8,120}", candidate_submission)
+            else upload_id
+        )
         record = {
             "upload_id": upload_id,
+            "submission_id": submission_id,
             "length": length,
             "original_filename": filename[:255],
             "original_relative_path": original_relative[:MAX_META_VALUE],
@@ -357,7 +394,7 @@ def web_app():
             "station": station[:120],
             "station_slug": _slug(station),
             "email": (meta.get("email") or "")[:120],
-            "language": (meta.get("language") or "Kolokwa (Liberian English)")[:120],
+            "language": (meta.get("language") or "Unspecified")[:120],
             "created_at": _utc_now(),
         }
         _reload_volume()
@@ -366,6 +403,14 @@ def web_app():
         (folder / "data.bin").touch()
         _write_json(folder / "meta.json", record)
         _commit_volume()
+
+        record_submission.spawn({
+            "submission_id": submission_id,
+            "station": station[:120],
+            "station_slug": record["station_slug"],
+            "email": record["email"],
+            "language": record["language"],
+        })
 
         base = str(request.base_url).rstrip("/")
         if base.startswith("http://"):

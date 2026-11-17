@@ -27,8 +27,10 @@ No access code is required — anyone with the portal link can upload.
    retries. The staged file is deleted immediately after the Hub commit, so **no audio is retained
    on Modal**. Only tiny JSON status files remain until the 24-hour cleanup job runs.
 4. Every file gets a sibling JSON provenance record under `metadata/` (station, email, language,
-   original relative path, size, SHA-256). Relative folder paths from folder uploads are preserved
-   in both the audio and metadata paths.
+   original relative path, size, SHA-256). The station form is also saved once per browser session
+   under `submissions/<station>/<yyyy-mm>/<submission-id>.json`, so contact details are easy to find
+   without scanning every file. Relative folder paths from folder uploads are preserved in both the
+   audio and metadata paths.
 
 ## Files
 
@@ -80,7 +82,8 @@ hf datasets info <USER>/<DATASET>
 
 The end-to-end tus flow (create → partial PATCH → HEAD resume → final PATCH → status → HF commit)
 was verified against the live deployment with a 32 KB WAV whose `relativePath` contained nested
-folders; the published path preserved those folders. Test artifacts were removed.
+folders; the published path preserved those folders. The station form record was verified at
+`submissions/<station>/<yyyy-mm>/<submission-id>.json`. Test artifacts were removed.
 
 ## Operational notes
 
