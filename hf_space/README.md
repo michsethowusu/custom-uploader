@@ -11,7 +11,7 @@ pinned: false
 # LEIN Speech — Station Audio Upload
 
 An open, shareable upload portal for LEIN partner radio stations. Stations enter only their name,
-email and language (popular Liberian languages plus a free-text “Other”), then drop files or an
+email and language (Kolokwa, Liberian English, or free-text “Other”), then drop files or an
 entire folder (subfolders included); no access code is required. Uploads are resumable (Uppy + tus,
 16 MB chunks) and are published directly to the public
 [LEIN Speech uploads dataset](https://huggingface.co/datasets/michsethowusu/lein-speech-uploads),
