@@ -1,6 +1,6 @@
 ---
 pretty_name: LEIN Speech — Radio Station Uploads
-license: cc-by-4.0
+license: cc-by-nc-4.0
 language:
   - lir
   - en
@@ -41,8 +41,8 @@ metadata file. One submission record is reused for all files selected in a brows
 
 ## License
 
-Submitted recordings are shared under CC BY 4.0. By uploading, stations confirm they have
-permission to share the recordings publicly.
+Submitted recordings are shared under CC BY-NC 4.0. By uploading, stations confirm they have
+permission to share the recordings publicly for non-commercial use.
 
 ## Notes
 
