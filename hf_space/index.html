@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LEIN Speech — Station Audio Upload</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uppy@4.18.3/dist/uppy.min.css" />
+  <style>
+    :root { color-scheme: light; --ink: #16202e; --muted: #5b6b7f; --line: #d9e1ea; --accent: #1663c7; --bg: #f5f8fc; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
+    main { max-width: 940px; margin: 0 auto; padding: 28px 18px 60px; }
+    header h1 { margin: 0 0 6px; font-size: 27px; letter-spacing: -.02em; }
+    header p { margin: 0 0 22px; color: var(--muted); }
+    a { color: var(--accent); }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; margin-bottom: 18px; box-shadow: 0 1px 2px rgba(16,32,54,.04); }
+    .card h2 { margin: 0 0 14px; font-size: 17px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 18px; }
+    label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+    input[type=text], input[type=email], input[type=date], textarea, select {
+      width: 100%; padding: 10px 11px; border: 1px solid #c6d1de; border-radius: 8px; font: inherit; background: #fff;
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    .checkbox { display: flex; gap: 10px; align-items: flex-start; grid-column: 1/-1; font-weight: 500; }
+    .checkbox input { margin-top: 4px; width: 17px; height: 17px; }
+    .hint { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+    button { font: inherit; cursor: pointer; }
+    .btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font-weight: 650; }
+    .btn:disabled { opacity: .6; cursor: wait; }
+    .btn.secondary { background: #eef3f9; color: var(--ink); }
+    .error { color: #b3261e; font-weight: 600; margin-top: 10px; min-height: 20px; }
+    .status-row { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .status-row:last-child { border-bottom: 0; }
+    .status-row .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #eef3f9; color: var(--muted); }
+    .pill.completed { background: #e6f5ea; color: #12662b; }
+    .pill.failed { background: #fdecec; color: #a31621; }
+    .pill.processing { background: #fff4dc; color: #8a5a00; }
+    footer { color: var(--muted); font-size: 12.5px; margin-top: 22px; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>LEIN Speech Dataset — Station Audio Upload</h1>
+    <p>
+      Share recordings of Liberian English / Kolokwa speech. Files are sent in small resumable
+      chunks and published directly to the public
+      <a id="dataset-link" href="#" target="_blank" rel="noopener">Hugging Face dataset</a>.
+      You can pause, lose connection, or close this tab — uploads pick up where they stopped.
+    </p>
+  </header>
+
+  <div id="app">
+    <section class="card">
+      <h2>Recording details</h2>
+      <div class="grid">
+        <div><label for="station">Station name *</label><input id="station" type="text" maxlength="120" /></div>
+        <div><label for="county">County *</label><input id="county" type="text" maxlength="120" /></div>
+        <div><label for="contributor">Contributor / presenter</label><input id="contributor" type="text" maxlength="120" /></div>
+        <div><label for="email">Contact email <span class="hint">(optional)</span></label><input id="email" type="email" maxlength="120" /></div>
+        <div>
+          <label for="language">Language / variety</label>
+          <select id="language">
+            <option>Kolokwa (Liberian English)</option>
+            <option>Liberian English</option>
+            <option>English</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div><label for="recording_date">Recording date</label><input id="recording_date" type="date" /></div>
+        <div style="grid-column:1/-1"><label for="notes">Notes <span class="hint">(programme name, speaker count, permissions, etc.)</span></label><textarea id="notes" maxlength="1000"></textarea></div>
+        <label class="checkbox" for="consent">
+          <input id="consent" type="checkbox" />
+          <span>I confirm the station owns or has permission to share these recordings publicly under CC BY 4.0, and that speakers were informed. *</span>
+        </label>
+      </div>
+      <div id="form-error" class="error"></div>
+    </section>
+
+    <section class="card">
+      <h2>Select audio files</h2>
+      <div id="uppy-dashboard"></div>
+      <p class="hint">Accepted: WAV, FLAC, MP3, M4A, AAC, OGG, Opus, WebM, ZIP, CSV, JSON, TXT. Up to 5 GB per file.</p>
+    </section>
+
+    <section class="card">
+      <h2>Publishing status</h2>
+      <div id="status-list"><span class="hint">Completed uploads will appear here.</span></div>
+    </section>
+
+  </div>
+
+  <footer>
+    Uploads are powered by Modal and stored only in the public Hugging Face dataset linked above.
+    Nothing is retained on the upload server after publishing.
+  </footer>
+</main>
+
+<script src="./config.js"></script>
+<script type="module">
+  import { Uppy, Dashboard, Tus, GoldenRetriever } from "https://cdn.jsdelivr.net/npm/uppy@4.18.3/dist/uppy.min.mjs";
+
+  const cfg = window.LEIN_CONFIG;
+  const $ = (selector) => document.querySelector(selector);
+  const TRACK_KEY = "lein_upload_tracking";
+  let uppy = null;
+
+  $("#dataset-link").href = cfg.datasetUrl;
+  $("#dataset-link").textContent = cfg.datasetName;
+
+  const fields = ["station", "county", "contributor", "email", "language", "recording_date", "notes", "consent"];
+  function currentMeta() {
+    return {
+      station: $("#station").value.trim(),
+      county: $("#county").value.trim(),
+      contributor: $("#contributor").value.trim(),
+      email: $("#email").value.trim(),
+      language: $("#language").value,
+      recording_date: $("#recording_date").value,
+      notes: $("#notes").value.trim(),
+      consent: $("#consent").checked ? "true" : "false",
+    };
+  }
+
+  function syncMeta() {
+    if (!uppy) return;
+    uppy.setMeta(currentMeta());
+  }
+  fields.forEach((id) => $("#" + id).addEventListener("change", syncMeta));
+
+  function validateForm() {
+    const meta = currentMeta();
+    if (!meta.station) { $("#form-error").textContent = "Station name is required."; return false; }
+    if (!meta.county) { $("#form-error").textContent = "County is required."; return false; }
+    if (meta.consent !== "true") { $("#form-error").textContent = "Please confirm sharing permission."; return false; }
+    $("#form-error").textContent = "";
+    return true;
+  }
+
+  function tracked() {
+    try { return JSON.parse(localStorage.getItem(TRACK_KEY) || "{}"); }
+    catch { return {}; }
+  }
+  function saveTracked(value) { localStorage.setItem(TRACK_KEY, JSON.stringify(value)); }
+
+  function renderStatus(id, state) {
+    const list = $("#status-list");
+    if (!Object.keys(tracked()).length) { list.innerHTML = ""; return; }
+    list.innerHTML = "";
+    for (const [uploadId, item] of Object.entries(tracked())) {
+      const row = document.createElement("div");
+      row.className = "status-row";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = item.name || uploadId;
+      const pill = document.createElement("span");
+      pill.className = `pill ${item.status || ""}`;
+      pill.textContent = item.status === "completed" ? "Published" :
+        item.status === "failed" ? "Failed" :
+        item.status === "processing" ? "Publishing…" : "Uploading…";
+      row.append(name, pill);
+      if (item.status === "completed" && item.file_url) {
+        const link = document.createElement("a");
+        link.href = item.file_url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = "View file";
+        row.append(link);
+      }
+      if (item.status === "failed") {
+        const retry = document.createElement("button");
+        retry.className = "btn secondary";
+        retry.textContent = "Retry";
+        retry.addEventListener("click", async () => {
+          await fetch(`${cfg.apiBase}/uploads/${uploadId}/retry`, { method: "POST" });
+          item.status = "processing";
+          saveTracked(tracked());
+          renderStatus(uploadId, item);
+          pollStatus(uploadId);
+        });
+        row.append(retry);
+      }
+      list.append(row);
+    }
+  }
+
+  async function pollStatus(id) {
+    const all = tracked();
+    for (let attempt = 0; attempt < 400; attempt++) {
+      try {
+        const response = await fetch(`${cfg.apiBase}/uploads/${id}/status`);
+        if (!response.ok) break;
+        const data = await response.json();
+        if (data.status === "completed" || data.status === "failed") {
+          Object.assign(all[id], data);
+          saveTracked(all);
+          renderStatus(id, all[id]);
+          return;
+        }
+        if (all[id].status !== data.status) {
+          all[id].status = data.status;
+          saveTracked(all);
+          renderStatus(id, all[id]);
+        }
+      } catch { /* keep polling through transient outages */ }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  }
+
+  function trackUpload(id, name) {
+    const all = tracked();
+    all[id] = { name, status: "uploading" };
+    saveTracked(all);
+    renderStatus(id, all[id]);
+    pollStatus(id);
+  }
+
+  function startUppy() {
+    uppy = new Uppy({
+      id: "lein-speech-upload",
+      autoProceed: false,
+      restrictions: {
+        maxFileSize: cfg.maxFileSize,
+        allowedFileTypes: [".wav", ".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".webm", ".zip", ".csv", ".json", ".txt"],
+      },
+      onBeforeFileAdded: (file) => {
+        file.meta.filename = file.name;
+        file.meta.filetype = file.type || "";
+        return file;
+      },
+      onBeforeUpload: () => validateForm(),
+    })
+      .use(Dashboard, {
+        inline: true,
+        target: "#uppy-dashboard",
+        proudlyDisplayPoweredByUppy: false,
+        showProgressDetails: true,
+        note: "Choose one or more files. Progress resumes automatically after a disconnect.",
+        metaFields: [],
+      })
+      .use(Tus, {
+        endpoint: `${cfg.apiBase}/uploads`,
+        chunkSize: cfg.chunkSize,
+        retryDelays: [0, 2000, 5000, 10000, 20000, 60000],
+        removeFingerprintOnSuccess: true,
+      })
+      .use(GoldenRetriever, { expires: 7 * 24 * 60 * 60 * 1000 });
+
+    uppy.setMeta(currentMeta());
+    uppy.on("upload-success", (file, response) => {
+      const location = response && (response.uploadURL || response.headers?.location);
+      if (location) trackUpload(location.split("/").pop(), file.name);
+    });
+
+    for (const [id, item] of Object.entries(tracked())) {
+      if (item.status !== "completed") pollStatus(id);
+    }
+    renderStatus();
+  }
+
+  startUppy();
+</script>
+</body>
+</html>
